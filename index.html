@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Memory Game</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #f0f8ff;
+      overflow: hidden;
+    }
+
+    h1 {
+      margin-top: 20px;
+      color: #333;
+    }
+
+    .timer {
+      font-size: 20px;
+      margin-top: 10px;
+      color: #333;
+    }
+
+    .game-board {
+      display: grid;
+      grid-template-columns: repeat(4, 100px);
+      gap: 10px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+
+    .card {
+      width: 100px;
+      height: 100px;
+      background-color: #ccc;
+      border-radius: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      font-size: 40px;
+      transition: background-color 0.3s, transform 0.2s;
+    }
+
+    .card.flipped {
+      background-color: #fff;
+      cursor: default;
+    }
+
+    .message {
+      margin-top: 30px;
+      font-size: 24px;
+      color: #2e8b57;
+      animation: bounceIn 1s ease forwards;
+      display: none;
+    }
+
+    .message.fail {
+      color: #d9534f;
+    }
+
+    .controls {
+      margin-top: 20px;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 5px;
+      cursor: pointer;
+    }
+
+    /* Simple light sprinkle animation */
+    .sprinkle {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: rgba(255,255,255,0.7);
+      border-radius: 50%;
+      animation: fall 5s linear infinite;
+    }
+
+    @keyframes fall {
+      0% { transform: translateY(-10px) translateX(0); opacity:1; }
+      100% { transform: translateY(800px) translateX(50px); opacity:0; }
+    }
+
+    @keyframes bounceIn {
+      0% { transform: scale(0.5); opacity: 0; }
+      60% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <h1>🃏 Memory Game</h1>
+
+  <div class="controls">
+    <label for="playerName">Enter your name: </label>
+    <input type="text" id="playerName" placeholder="Player Name" />
+    <button id="startBtn">Start Game</button>
+    <button id="muteBtn">🔊 Mute</button>
+  </div>
+
+  <div class="timer" id="timer">⏱ Time left: 30s</div>
+  <div class="game-board" id="gameBoard"></div>
+  <div class="message" id="message"></div>
+  <button id="playAgainBtn" style="display:none;">Play Again</button>
+  <div class="leaderboard" id="leaderboard"></div>
+
+  <audio id="bgMusic" src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" loop></audio>
+
+  <script>
+    const symbols = ['💎','🔷','🔶','🔺','🔵','🔸','💠','🔻'];
+    let cards = [];
+    const gameBoard = document.getElementById('gameBoard');
+    const message = document.getElementById('message');
+    const timerDisplay = document.getElementById('timer');
+    const startBtn = document.getElementById('startBtn');
+    const playAgainBtn = document.getElementById('playAgainBtn');
+    const muteBtn = document.getElementById('muteBtn');
+    const bgMusic = document.getElementById('bgMusic');
+    const playerNameInput = document.getElementById('playerName');
+    const leaderboardDiv = document.getElementById('leaderboard');
+
+    let flippedCards = [];
+    let matchedCount = 0;
+    let lockBoard = false;
+    let timeLeft = 30;
+    let timerInterval = null;
+    let gameOver = false;
+    let playerName = "";
+
+    function createSprinkles(count=50){
+      for(let i=0;i<count;i++){
+        const sprinkle = document.createElement('div');
+        sprinkle.className = 'sprinkle';
+        sprinkle.style.left = Math.random()*window.innerWidth+'px';
+        sprinkle.style.animationDuration = (3+Math.random()*3)+'s';
+        sprinkle.style.width = sprinkle.style.height = (5+Math.random()*5)+'px';
+        document.body.appendChild(sprinkle);
+      }
+    }
+
+    function startGame() {
+      playerName = playerNameInput.value.trim();
+      if(!playerName) {
+        alert("Please enter your name!");
+        return;
+      }
+      bgMusic.play();
+      startBtn.disabled = true;
+      playerNameInput.disabled = true;
+
+      cards = [...symbols, ...symbols];
+      cards.sort(() => 0.5 - Math.random());
+
+      gameBoard.innerHTML = '';
+      cards.forEach((symbol,index)=>{
+        const card = document.createElement('div');
+        card.classList.add('card');
+        card.dataset.symbol = symbol;
+        card.dataset.index = index;
+        card.addEventListener('click',()=>flipCard(card));
+        gameBoard.appendChild(card);
+      });
+
+      flippedCards = [];
+      matchedCount = 0;
+      lockBoard = false;
+      timeLeft = 30;
+      gameOver = false;
+      timerDisplay.textContent = `⏱ Time left: ${timeLeft}s`;
+      message.style.display = 'none';
+      playAgainBtn.style.display = 'none';
+
+      startTimer();
+      showLeaderboard();
+    }
+
+    function startTimer() {
+      if(timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(()=>{
+        timeLeft--;
+        timerDisplay.textContent = `⏱ Time left: ${timeLeft}s`;
+        if(timeLeft<=0){
+          clearInterval(timerInterval);
+          endGame(false);
+        }
+      },1000);
+    }
+
+    function flipCard(card){
+      if(lockBoard || card.classList.contains('flipped') || gameOver) return;
+      card.classList.add('flipped');
+      card.textContent = card.dataset.symbol;
+      flippedCards.push(card);
+
+      if(flippedCards.length === 2){
+        checkForMatch();
+      }
+    }
+
+    function checkForMatch(){
+      const [card1,card2] = flippedCards;
+      if(card1.dataset.symbol === card2.dataset.symbol){
+        matchedCount++;
+        flippedCards = [];
+        if(matchedCount === symbols.length){
+          clearInterval(timerInterval);
+          endGame(true);
+        }
+      }else{
+        lockBoard = true;
+        setTimeout(()=>{
+          card1.classList.remove('flipped');
+          card2.classList.remove('flipped');
+          card1.textContent='';
+          card2.textContent='';
+          flippedCards=[];
+          lockBoard=false;
+        },1000);
+      }
+    }
+
+    function endGame(won){
+      gameOver = true;
+      lockBoard = true;
+      message.style.display='block';
+      message.classList.toggle('fail',!won);
+      message.innerHTML = won ? `🎉 ${playerName}, You completed the game in time! 🎉` : `⏰ Time's up, ${playerName}!`;
+
+      // Save best time
+      if(won){
+        let bestTime = localStorage.getItem(`memory_bestTime_${playerName}`);
+        const timeTaken = 30-timeLeft;
+        if(!bestTime || timeTaken<bestTime){
+          localStorage.setItem(`memory_bestTime_${playerName}`, timeTaken);
+        }
+      }
+      playAgainBtn.style.display='inline-block';
+      showLeaderboard();
+    }
+
+    function showLeaderboard(){
+      const keys = Object.keys(localStorage).filter(k=>k.startsWith('memory_bestTime_'));
+      if(keys.length===0){ leaderboardDiv.innerHTML='🏆 Leaderboard empty'; return; }
+      const list = keys.map(k=>({name:k.replace('memory_bestTime_',''),time:localStorage.getItem(k)}));
+      list.sort((a,b)=>a.time-b.time);
+      leaderboardDiv.innerHTML = '<h3>🏆 Leaderboard</h3><ol>' + list.map(e=>`<li>${e.name}: ${e.time}s</li>`).join('') + '</ol>';
+    }
+
+    startBtn.addEventListener('click',startGame);
+
+    playAgainBtn.addEventListener('click', () => {
+      // Reset everything for a fresh game
+      playerNameInput.disabled = false;
+      playerNameInput.value = "";
+      startBtn.disabled = false;
+      gameBoard.innerHTML = "";
+      message.style.display = 'none';
+      playAgainBtn.style.display = 'none';
+      timerDisplay.textContent = "⏱ Time left: 30s";
+      bgMusic.pause();
+      bgMusic.currentTime = 0;
+      flippedCards = [];
+      matchedCount = 0;
+      lockBoard = false;
+      gameOver = false;
+    });
+
+    muteBtn.addEventListener('click',()=>{
+      if(bgMusic.paused){
+        bgMusic.play();
+        muteBtn.textContent='🔊 Mute';
+      }else{
+        bgMusic.pause();
+        muteBtn.textContent='🔇 Unmute';
+      }
+    });
+
+    window.onload = createSprinkles;
+  </script>
+</body>
+</html>
