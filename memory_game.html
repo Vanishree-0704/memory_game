@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🃏 Memory Game</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: radial-gradient(circle at top left, #f0f8ff, #e6f7ff, #f9f9ff);
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+
+    /* Light sprinkle animation */
+    .sparkle {
+      position: fixed;
+      width: 6px;
+      height: 6px;
+      background: rgba(255,255,255,0.8);
+      border-radius: 50%;
+      animation: float 10s linear infinite;
+    }
+    @keyframes float {
+      from { transform: translateY(100vh); opacity: 0; }
+      50%  { opacity: 1; }
+      to   { transform: translateY(-10vh); opacity: 0; }
+    }
+
+    h1 {
+      margin-top: 20px;
+      color: #333;
+    }
+
+    .input-area {
+      margin: 15px;
+    }
+
+    input {
+      padding: 8px;
+      border-radius: 5px;
+      border: 1px solid #aaa;
+      font-size: 16px;
+    }
+
+    button {
+      padding: 8px 15px;
+      margin: 5px;
+      border: none;
+      border-radius: 8px;
+      background: #4CAF50;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    button:hover {
+      background: #45a049;
+    }
+
+    .timer {
+      font-size: 20px;
+      margin-top: 10px;
+      color: #333;
+    }
+
+    .game-board {
+      display: grid;
+      grid-template-columns: repeat(4, 100px);
+      gap: 10px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+
+    .card {
+      width: 100px;
+      height: 100px;
+      background-color: #ccc;
+      border-radius: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      font-size: 40px;
+      transition: background-color 0.3s, transform 0.2s;
+      box-shadow: 2px 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .card.flipped {
+      background-color: #fff;
+      cursor: default;
+    }
+
+    .message {
+      margin-top: 30px;
+      font-size: 22px;
+      color: #2e8b57;
+      animation: bounceIn 1s ease forwards;
+      display: none;
+    }
+
+    .message.fail {
+      color: #d9534f;
+    }
+
+    @keyframes bounceIn {
+      0% { transform: scale(0.5); opacity: 0; }
+      60% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(1); }
+    }
+
+    .leaderboard {
+      margin-top: 30px;
+      padding: 15px;
+      background: #fff;
+      border-radius: 10px;
+      width: 250px;
+      margin-left: auto;
+      margin-right: auto;
+      box-shadow: 0px 0px 10px rgba(0,0,0,0.1);
+    }
+
+    .leaderboard h2 {
+      margin: 0 0 10px 0;
+      font-size: 20px;
+      color: #444;
+    }
+
+    .leaderboard ol {
+      padding-left: 20px;
+      text-align: left;
+      margin: 0;
+    }
+
+    #muteBtn {
+      margin-top: 15px;
+      background: #007BFF;
+    }
+    #muteBtn:hover {
+      background: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <h1>🃏 Memory Game</h1>
+  
+  <div class="input-area" id="nameInput">
+    <input type="text" id="playerName" placeholder="Enter your name"/>
+    <button onclick="startGame()">Start Game</button>
+  </div>
+  
+  <div class="timer" id="timer">⏱ Time left: 30s</div>
+  <div class="game-board" id="gameBoard"></div>
+  <div class="message" id="message"></div>
+
+  <button id="muteBtn" onclick="toggleMute()">🔊 Mute</button>
+
+  <div class="leaderboard" id="leaderboard">
+    <h2>🏆 Leaderboard</h2>
+    <ol id="scoreList"></ol>
+  </div>
+
+  <script>
+    const symbols = ['💎','🔷','🔶','🔺','🔵','🔸','💠','🔻'];
+    let cards = [];
+    const gameBoard = document.getElementById('gameBoard');
+    const message = document.getElementById('message');
+    const timerDisplay = document.getElementById('timer');
+    const scoreList = document.getElementById('scoreList');
+    const nameInput = document.getElementById('nameInput');
+
+    let flippedCards = [];
+    let matchedCount = 0;
+    let lockBoard = false;
+    let timerInterval = null;
+    let timeLeft = 30;
+    let gameOver = false;
+    let player = "";
+    let startTime = null;
+
+    let bgMusic = new Audio("https://www.bensound.com/bensound-music/bensound-littleidea.mp3");
+    bgMusic.loop = true;
+    let flipSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
+    let winSound = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+    let loseSound = new Audio("https://actions.google.com/sounds/v1/cartoon/descending_whistle.ogg");
+    let isMuted = false;
+
+    function toggleMute() {
+      isMuted = !isMuted;
+      document.getElementById("muteBtn").textContent = isMuted ? "🔇 Unmute" : "🔊 Mute";
+      if (isMuted) {
+        bgMusic.pause();
+      } else {
+        bgMusic.play();
+      }
+    }
+
+    function askPlayerName() {
+      nameInput.style.display = "block";
+      message.style.display = "none";
+    }
+
+    function startGame() {
+      player = document.getElementById('playerName').value.trim();
+      if (!player) {
+        alert("Please enter your name!");
+        return;
+      }
+
+      resetGame();
+      nameInput.style.display = "none";
+
+      cards = [...symbols, ...symbols];
+      cards.sort(() => 0.5 - Math.random());
+      cards.forEach((symbol, index) => {
+        const card = document.createElement('div');
+        card.classList.add('card');
+        card.dataset.symbol = symbol;
+        card.dataset.index = index;
+        card.addEventListener('click', () => flipCard(card));
+        gameBoard.appendChild(card);
+      });
+
+      message.style.display = 'none';
+      if (!isMuted) bgMusic.play();
+    }
+
+    function resetGame() {
+      gameBoard.innerHTML = '';
+      flippedCards = [];
+      matchedCount = 0;
+      lockBoard = false;
+      gameOver = false;
+      clearInterval(timerInterval);
+      timeLeft = 30;
+      timerDisplay.textContent = `⏱ Time left: 30s`;
+      timerInterval = null;
+      startTime = null;
+    }
+
+    function startTimer() {
+      if (timerInterval) return;
+      startTime = Date.now();
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        timerDisplay.textContent = `⏱ Time left: ${timeLeft}s`;
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          endGame(false);
+        }
+      }, 1000);
+    }
+
+    function endGame(won) {
+      gameOver = true;
+      lockBoard = true;
+      message.style.display = 'block';
+      message.classList.toggle('fail', !won);
+
+      bgMusic.pause();
+      bgMusic.currentTime = 0;
+
+      if (won) {
+        const totalTime = Math.floor((Date.now() - startTime) / 1000);
+        message.innerHTML = `🎉 Congrats ${player}, you won in ${totalTime}s! 🎉<br>Do you want to try again?`;
+        saveScore(player, totalTime);
+        if (!isMuted) winSound.play();
+      } else {
+        message.innerHTML = `⏰ Time's up, ${player}! You lost.<br>Do you want to try again?`;
+        if (!isMuted) loseSound.play();
+      }
+
+      // Yes / No buttons
+      message.innerHTML += `
+        <div style="margin-top:15px;">
+          <button onclick="askPlayerName()">✅ Yes</button>
+          <button onclick="noThanks()">❌ No</button>
+        </div>
+      `;
+    }
+
+    function noThanks() {
+      message.innerHTML = "🙏 Thanks for playing! Refresh to play later.";
+    }
+
+    function flipCard(card) {
+      if (lockBoard || card.classList.contains('flipped') || gameOver) return;
+      startTimer();
+      card.classList.add('flipped');
+      card.textContent = card.dataset.symbol;
+      flippedCards.push(card);
+      if (!isMuted) flipSound.play();
+
+      if (flippedCards.length === 2) {
+        checkForMatch();
+      }
+    }
+
+    function checkForMatch() {
+      const [card1, card2] = flippedCards;
+
+      if (card1.dataset.symbol === card2.dataset.symbol) {
+        matchedCount++;
+        flippedCards = [];
+        if (matchedCount === symbols.length) {
+          clearInterval(timerInterval);
+          endGame(true);
+        }
+      } else {
+        lockBoard = true;
+        setTimeout(() => {
+          card1.classList.remove('flipped');
+          card2.classList.remove('flipped');
+          card1.textContent = '';
+          card2.textContent = '';
+          flippedCards = [];
+          lockBoard = false;
+        }, 1000);
+      }
+    }
+
+    function saveScore(name, time) {
+      let scores = JSON.parse(localStorage.getItem("memoryScores")) || [];
+      scores.push({name, time});
+      scores.sort((a,b) => a.time - b.time);
+      scores = scores.slice(0,5);
+      localStorage.setItem("memoryScores", JSON.stringify(scores));
+      displayScores();
+    }
+
+    function displayScores() {
+      let scores = JSON.parse(localStorage.getItem("memoryScores")) || [];
+      scoreList.innerHTML = '';
+      scores.forEach(s => {
+        let li = document.createElement('li');
+        li.textContent = `${s.name} - ${s.time}s`;
+        scoreList.appendChild(li);
+      });
+    }
+
+    displayScores();
+
+    // Generate sparkles
+    for (let i = 0; i < 20; i++) {
+      let sparkle = document.createElement("div");
+      sparkle.classList.add("sparkle");
+      sparkle.style.left = Math.random() * 100 + "vw";
+      sparkle.style.animationDuration = (5 + Math.random() * 5) + "s";
+      sparkle.style.opacity = Math.random();
+      document.body.appendChild(sparkle);
+    }
+  </script>
+</body>
+</html>
